@@ -1,0 +1,74 @@
+"""训练预测MLD的RF模型"""
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+import joblib
+from plot_utils import add_stats_box
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+
+#
+warnings.filterwarnings('ignore')
+sns.set_style(style='darkgrid')
+#
+# link depth and fetch to the model
+df1 = pd.read_csv('data/stat/04_annualSummerMean.csv')
+df2 = pd.read_csv('data/stat/03_epilimnion_metalimnion_trend.csv')
+df2 = df2[['lake_id', 'Depth', 'Fetch']]
+df = pd.merge(df1, df2, how='inner', on='lake_id')
+obj = 'Ze'
+cols = ['year', 'AT', 'WS', 'TP', 'SR', 'LR', 'SP', 'Secchi', 'Depth', 'Fetch', obj]
+# df = pd.read_csv('data/stat/04_annualSummerMean.csv')
+df1 = df[cols]
+df1 = df1.dropna()
+#
+x = df1[cols[:-1]].values
+y = df1[obj].values
+# 分割
+x_train, x_test, y_train, y_val = train_test_split(x, y, test_size=0.1, random_state=44)
+# scaler the data
+x_scaler = StandardScaler()
+y_scaler = MinMaxScaler()
+x_t1 = x_scaler.fit_transform(x_train)
+y_t1 = y_scaler.fit_transform(np.log(y_train.reshape(-1, 1)))
+x_t2 = x_scaler.transform(x_test)
+y_t2 = y_scaler.transform(np.log(y_val.reshape(-1, 1)))
+
+# fit a RF model
+rf = RandomForestRegressor(n_jobs=-1)
+rf.fit(x_t1, y_t1.ravel())
+# predict
+y1 = rf.predict(x_t1).reshape(-1, 1)
+y2 = rf.predict(x_t2).reshape(-1, 1)
+y_hat1 = np.exp(y_scaler.inverse_transform(y1)).ravel()
+y_hat2 = np.exp(y_scaler.inverse_transform(y2)).ravel()
+#
+fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+ax = axes[0]
+ax.scatter(y_train, y_hat1, color='xkcd:sky blue', alpha=0.7)
+ax.plot(range(0, 51, 10), range(0, 51, 10), 'k--', alpha=0.6)
+ax.set_xlim(0.1, 50)
+ax.set_ylim(0.1, 50)
+ax.set_xscale('log')
+ax.set_yscale('log')
+ax.set_xlabel('Measured $Z_e$ (m)')
+ax.set_ylabel('Estiamted $Z_e$ (m)')
+add_stats_box(ax, y_train, y_hat1, label='(a) Train dataset')
+#
+ax = axes[1]
+ax.scatter(y_val, y_hat2, color='xkcd:reddish', alpha=0.7)
+ax.plot(range(0,51,10), range(0,51,10), 'k--', alpha=0.6)
+ax.set_xlim(0.1, 50)
+ax.set_ylim(0.1, 50)
+ax.set_xscale('log')
+ax.set_yscale('log')
+ax.set_xlabel('Measured $Z_e$ (m)')
+ax.set_ylabel('Estiamted $Z_e$ (m)')
+add_stats_box(ax, y_val, y_hat2, label='(b) Test dataset')
+#
+plt.tight_layout()
+plt.savefig('benchmarking/rf_MLD_validation.png', dpi=600)
+plt.show()
